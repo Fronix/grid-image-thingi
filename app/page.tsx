@@ -182,8 +182,9 @@ export default function Home() {
                     ></path>
                   </svg>
                   <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                    <span className="font-semibold">Click to upload</span> or
-                    drag and drop
+                    <span className="font-semibold">Click to upload</span>,{" "}
+                    <span className="font-semibold">Paste (CTRL+V)</span> or
+                    drag and drop images
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     PNG or JPG (MAX. 5MB and MAX. 10 files)
