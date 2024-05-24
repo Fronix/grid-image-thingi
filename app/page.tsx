@@ -6,11 +6,11 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { drawGrid } from "../lib/draw-client";
 import { useCopyToClipboard } from "@uidotdev/usehooks";
 
-export const maxImages = 10;
-export const maxFileSize = 10 * 1024 * 1024; // 10MB
-const currentYear = new Date().getFullYear();
-
 export default function Home() {
+  const maxImages = 10;
+  const maxFileSize = 10 * 1024 * 1024; // 10MB
+  const currentYear = new Date().getFullYear();
+
   const [copiedText, copyToClipboard] = useCopyToClipboard();
   const [hasCopied, setHasCopied] = useState(false);
 
