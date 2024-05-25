@@ -1,10 +1,12 @@
 "use client";
 import { faCheck, faCopy } from "@fortawesome/free-solid-svg-icons";
-import { FileRejection, useDropzone } from "react-dropzone";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { drawGrid } from "../lib/draw-client";
 import { useCopyToClipboard } from "@uidotdev/usehooks";
+import domtoimage from "dom-to-image";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useDropzone } from "react-dropzone";
 
 export default function Home() {
   const maxImages = 10;
@@ -13,58 +15,28 @@ export default function Home() {
 
   const [copiedText, copyToClipboard] = useCopyToClipboard();
   const [hasCopied, setHasCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
 
+  const [base64, setBase64] = useState<string>("");
   const [images, setImages] = useState<File[]>([]);
-  const [show, setShow] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
-  const getCanvas = () =>
-    document.getElementById("canvas") as HTMLCanvasElement;
-  const canvasContext = useCallback(
-    () => getCanvas().getContext("2d") as CanvasRenderingContext2D,
-    []
-  );
-
-  const clearCanvas = useCallback(() => {
-    const ctx = canvasContext();
-    ctx.clearRect(0, 0, getCanvas().width, getCanvas().height);
-  }, [canvasContext]);
-
-  const onDropFiles = useCallback(
-    (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-      setHasCopied(false);
-      if (fileRejections.length > 0) {
-        const errors: string[] = fileRejections.map((f) =>
-          f.errors.map((e) => e.message).join(", ")
-        );
-        const uniqueErrors = Array.from(new Set(errors));
-        alert(
-          "Some files were rejected. \nErrors:\n " + uniqueErrors.join("\n")
-        );
-        return;
-      }
-      const allImages = [...images, ...acceptedFiles];
-      if (acceptedFiles.length > 1) {
-        setShow(true);
-      }
-
-      setImages(allImages);
-      const imageUrls = allImages.map((file) => URL.createObjectURL(file));
-      clearCanvas();
-      drawGrid(getCanvas())(imageUrls);
-      setShow(true);
-    },
-    [clearCanvas, images]
-  );
+  useEffect(() => {
+    if (images.length > 0) {
+      setBase64("");
+    }
+  }, [images]);
 
   const dropzone = useDropzone({
-    accept: {
-      "image/png": [".png", ".jpg"],
-    },
     multiple: true,
     maxFiles: maxImages,
     maxSize: maxFileSize,
-    onDrop: onDropFiles,
+    onDrop: async (acceptedFiles, fileRejections) => {
+      const newImgs = [...images, ...acceptedFiles];
+      setImages(newImgs);
+      if (newImgs.length > 1) await domToImage();
+    },
     preventDropOnDocument: false,
   });
   const { acceptedFiles, getRootProps, getInputProps } = dropzone;
@@ -72,82 +44,60 @@ export default function Home() {
   // listen to on paste event
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      const items = event.clipboardData?.items;
-      if (items) {
-        const files = Array.from(items).filter((item) => item.kind === "file");
-        const pastedImages = files.map((file) => file.getAsFile() as File);
-        const errors: FileRejection[] = [];
-        if (pastedImages.length > 10) {
-          errors.push({
-            file: files[0].getAsFile() as File,
-            errors: [
-              {
-                message: "Maximum of 10 images allowed",
-                code: "too-many-files",
-              },
-            ],
-          });
-        }
-        if (pastedImages.some((file) => file.size > maxFileSize)) {
-          errors.push({
-            file: files[0].getAsFile() as File,
-            errors: [
-              { message: "File size too large", code: "file-too-large" },
-            ],
-          });
-        }
-        if (
-          pastedImages.some(
-            (file) => !["image/png", "image/jpeg"].includes(file.type)
-          )
-        ) {
-          errors.push({
-            file: files[0].getAsFile() as File,
-            errors: [
-              {
-                message: "Invalid file type",
-                code: "file-invalid-type",
-              },
-            ],
-          });
-        }
-
-        onDropFiles(pastedImages, errors);
-      }
+      console.log("paste event", event);
     };
 
     window.addEventListener("paste", handlePaste);
     return () => {
       window.removeEventListener("paste", handlePaste);
     };
-  }, [images, onDropFiles]);
+  }, []);
 
   const removeAll = () => {
     acceptedFiles.length = 0;
     acceptedFiles.splice(0, acceptedFiles.length);
     fileInput!.current!.value = "";
-    setShow(false);
     setImages([]);
-    clearCanvas();
-    console.log(acceptedFiles);
-    console.log(images);
-    console.log(fileInput!.current!.value);
-    console.log(fileInput!.current!.files);
-    window.location.reload();
+    setBase64("");
   };
 
   const onCopyToClipboard = () => {
-    const canvas = getCanvas();
     // Convert the canvas to a blob
-    canvas.toBlob((blob) => {
-      navigator.clipboard.write([
-        new ClipboardItem({
-          "image/png": blob!,
-        }),
-      ]);
-      setHasCopied(true);
-    });
+    const base64ToBlob = (base64: string) => {
+      const byteString = atob(base64.split(",")[1]);
+      const mimeString = base64.split(",")[0].split(":")[1].split(";")[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      return new Blob([ab], { type: mimeString });
+    };
+
+    navigator.clipboard.write([
+      new ClipboardItem({
+        "image/png": base64ToBlob(base64),
+      }),
+    ]);
+    setHasCopied(true);
   };
+
+  const domToImage = async () => {
+    const grid = gridRef.current;
+    if (grid) {
+      setLoading(true);
+      setTimeout(async () => {
+        const dataUrl = await domtoimage.toPng(grid, {
+          width: grid.clientWidth * 1,
+          height: grid.clientHeight,
+          bgcolor: "black",
+        });
+        setBase64(dataUrl);
+        setLoading(false);
+      }, 600);
+    }
+  };
+
   return (
     <>
       <header className="text-white py-4 flex">
@@ -157,7 +107,8 @@ export default function Home() {
       </header>
       <main
         {...getRootProps()}
-        className="w-full h-full px-4 sm:px-6 lg:px-8 flex flex-col sm:items-center mx-auto flex-grow justify-center"
+        tabIndex={-1}
+        className="w-full h-full px-4 sm:px-6 lg:px-8 flex flex-col sm:items-center mx-auto flex-grow justify-center focus:outline-none"
       >
         <div className="flex flex-col gap-4 w-full max-w-2xl">
           <div>
@@ -189,6 +140,15 @@ export default function Home() {
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     PNG or JPG (MAX. 5MB and MAX. 10 files)
                   </p>
+                  <p className="text-sm pt-4 text-gray-500 dark:text-gray-400">
+                    {images.length === 1 ? (
+                      <span className="text-red-300">
+                        Add more images to create a grid
+                      </span>
+                    ) : (
+                      ""
+                    )}
+                  </p>
                 </div>
                 <input
                   id="dropzone-file"
@@ -199,7 +159,7 @@ export default function Home() {
               </label>
             </div>
           </div>
-          {show && (
+          {base64 && (
             <div className="flex w-full justify-center gap-4">
               <button
                 className="btn btn-primary"
@@ -218,26 +178,71 @@ export default function Home() {
               </button>
             </div>
           )}
-
-          <canvas
-            id="canvas"
-            className={`${show ? "" : "hidden"} flex`}
-            width={600}
-            height={800}
-          ></canvas>
+          <div className="flex w-full">
+            <div className="m-[0_auto]">
+              {loading && (
+                <span className="loading loading-ring loading-lg text-info"></span>
+              )}
+              {base64 && (
+                <>
+                  <Image
+                    src={`${base64}`}
+                    width={700}
+                    height={820}
+                    alt="grid"
+                  />
+                </>
+              )}
+            </div>
+          </div>
+          <div className="absolute bottom-[100rem]">
+            <div
+              ref={gridRef}
+              className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-800 relative w-full"
+            >
+              {images.length > 0 &&
+                images.map((file, index) => (
+                  <div key={index} className={`text-center`}>
+                    <span className="font-sans text-white font-bold text-xl">
+                      {index + 1}
+                    </span>
+                    <Image
+                      src={URL.createObjectURL(images[index])}
+                      width={700}
+                      height={800}
+                      alt="grid"
+                    />
+                  </div>
+                ))}
+              <span
+                className={`absolute bottom-0 right-0 font-sans text-white font-bold text-xl ${
+                  base64 ? "" : "hidden"
+                }`}
+              >
+                By: grid-image-thingi.fronix.se
+              </span>
+            </div>
+          </div>
         </div>
       </main>
       <footer className="text-center py-4">
         <div className="max-w-[85rem] mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-sm text-white/50">
-            © {currentYear} Image grid thingi. Made by{" "}
-            <a
+            © {currentYear}{" "}
+            <Link
+              href="https://github.com/Fronix/grid-image-thingi"
+              className="text-white font-medium hover:text-white/80"
+            >
+              Image grid thingi
+            </Link>
+            . Made by{" "}
+            <Link
               target="_blank"
               className="text-white font-medium hover:text-white/80"
               href="https://github.com/Fronix"
             >
               fronix
-            </a>
+            </Link>
           </p>
         </div>
       </footer>
