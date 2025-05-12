@@ -102,7 +102,7 @@ export default function Home() {
     <>
       <header className="text-white py-4 flex">
         <div className="mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-5xl font-bold">Image grid thingi</h1>
+          <h1 className="text-5xl font-bold">Image grid thingi 🚀</h1>
         </div>
       </header>
       <main
